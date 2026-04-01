@@ -28,7 +28,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from engine import BomberEnv, Map, Player
 from reward import compute_reward
-from utils import plot_loss, plot_rewards, plot_win_rates, plot_moving_average
+from utils import plot_loss, plot_rewards, plot_moving_average
 from agent import (
     SimpleRuleAgent, SmarterRuleAgent, TacticalRuleAgent,
     GeniusRuleAgent, BoxFarmerAgent,
@@ -103,26 +103,85 @@ class DQNModel(nn.Module):
 
     def __init__(self, map_shape, aux_dim, output_dim):
         super().__init__()
-        c, h, w = map_shape
-        self.map_encoder = nn.Sequential(
-            nn.Conv2d(c, 32, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
+        c, _, _ = map_shape
+
+        class _SE(nn.Module):
+            def __init__(self, channels: int, reduction: int = 16):
+                super().__init__()
+                hidden = max(channels // reduction, 4)
+                self.pool = nn.AdaptiveAvgPool2d(1)
+                self.fc1 = nn.Conv2d(channels, hidden, kernel_size=1, bias=True)
+                self.fc2 = nn.Conv2d(hidden, channels, kernel_size=1, bias=True)
+
+            def forward(self, x):
+                s = self.pool(x)
+                s = F.relu(self.fc1(s), inplace=True)
+                s = torch.sigmoid(self.fc2(s))
+                return x * s
+
+        class _ResBlock(nn.Module):
+            def __init__(self, in_ch: int, out_ch: int, stride: int = 1):
+                super().__init__()
+                self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, bias=False)
+                self.bn1 = nn.BatchNorm2d(out_ch)
+                self.conv2 = nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1, bias=False)
+                self.bn2 = nn.BatchNorm2d(out_ch)
+                self.se = _SE(out_ch)
+                self.act = nn.ReLU(inplace=True)
+
+                self.proj = None
+                if stride != 1 or in_ch != out_ch:
+                    self.proj = nn.Sequential(
+                        nn.Conv2d(in_ch, out_ch, kernel_size=1, stride=stride, bias=False),
+                        nn.BatchNorm2d(out_ch),
+                    )
+
+            def forward(self, x):
+                identity = x
+                out = self.act(self.bn1(self.conv1(x)))
+                out = self.bn2(self.conv2(out))
+                out = self.se(out)
+                if self.proj is not None:
+                    identity = self.proj(identity)
+                out = out + identity
+                return self.act(out)
+
+        def _make_stage(in_ch: int, out_ch: int, blocks: int, stride: int):
+            layers = [_ResBlock(in_ch, out_ch, stride=stride)]
+            for _ in range(blocks - 1):
+                layers.append(_ResBlock(out_ch, out_ch, stride=1))
+            return nn.Sequential(*layers)
+
+        base = 64
+        self.map_stem = nn.Sequential(
+            nn.Conv2d(c, base, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(base),
+            nn.ReLU(inplace=True),
         )
-        with torch.no_grad():
-            conv_out_dim = self.map_encoder(torch.zeros(1, c, h, w)).reshape(1, -1).size(1)
+        self.map_stage1 = _make_stage(base, base, blocks=2, stride=1)
+        self.map_stage2 = _make_stage(base, base * 2, blocks=2, stride=2)
+        self.map_stage3 = _make_stage(base * 2, base * 4, blocks=2, stride=2)
+        self.map_pool = nn.AdaptiveAvgPool2d(1)
+        map_feat_dim = base * 4
+        self.map_dropout = nn.Dropout(p=0.1)
+
         self.aux_encoder = nn.Sequential(
-            nn.Linear(aux_dim, 32), nn.ReLU(),
-            nn.Linear(32, 32), nn.ReLU(),
+            nn.Linear(aux_dim, 64), nn.ReLU(),
+            nn.Linear(64, 64), nn.ReLU(),
         )
         self.head = nn.Sequential(
-            nn.Linear(conv_out_dim + 32, 256), nn.ReLU(),
+            nn.Linear(map_feat_dim + 64, 256), nn.ReLU(),
             nn.Linear(256, 128), nn.ReLU(),
             nn.Linear(128, output_dim),
         )
 
     def forward(self, map_x, aux_x):
-        map_feat = self.map_encoder(map_x).reshape(map_x.size(0), -1)
+        x = self.map_stem(map_x)
+        x = self.map_stage1(x)
+        x = self.map_stage2(x)
+        x = self.map_stage3(x)
+        map_feat = self.map_pool(x).flatten(1)
+        map_feat = self.map_dropout(map_feat)
         aux_feat = self.aux_encoder(aux_x)
         return self.head(torch.cat([map_feat, aux_feat], dim=1))
 
@@ -587,7 +646,6 @@ def train_dqfd(
     td_loss_history = []
     margin_loss_history = []
     reward_history = []
-    win_history = []
     ep_reward_history = []
 
     with tqdm(total=num_episodes, desc="DQfD Training") as pbar:
@@ -617,10 +675,6 @@ def train_dqfd(
 
                 env_buffer.push(map_state, aux_state, user_action, r,
                                 next_map_state, next_aux_state, float(done))
-
-                if done:
-                    win_history.append(
-                        1 if next_obs["players"][user_id][2] else 0)
 
                 if (len(env_buffer) >= half_batch
                         and len(demo_buffer) >= half_batch):
@@ -670,8 +724,6 @@ def train_dqfd(
               save_path=f"{model_folder}/{tag}_dqfd_loss.png")
     plot_rewards(reward_history,
                  save_path=f"{model_folder}/{tag}_rewards.png")
-    plot_win_rates(win_history,
-                   save_path=f"{model_folder}/{tag}_win_rates.png")
     plot_moving_average(ep_reward_history, window_size=10,
                         save_path=f"{model_folder}/{tag}_moving_avg.png")
 
@@ -683,6 +735,9 @@ def train_dqfd(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Imitation Learning: BC Pre-training + DQfD Fine-tuning")
+    parser.add_argument("--seed", type=int, default=86,
+                        help="Random seed for reproducibility")
+
     parser.add_argument("--expert_type", type=str, default="genius",
                         choices=list(AGENT_LOOKUP.keys()),
                         help="Expert rule agent to imitate")
@@ -693,16 +748,18 @@ if __name__ == "__main__":
                         help="Episodes of expert play to collect")
     parser.add_argument("--bc_epochs", type=int, default=15,
                         help="Behavioral cloning pre-training epochs")
+
     parser.add_argument("--num_episodes", type=int, default=300,
                         help="DQfD RL training episodes")
     parser.add_argument("--max_steps", type=int, default=500,
                         help="Maximum steps per episode")
-    parser.add_argument("--seed", type=int, default=86,
-                        help="Random seed for reproducibility")
     parser.add_argument("--lambda_bc", type=float, default=1.0,
                         help="Initial weight for supervised margin loss")
     parser.add_argument("--margin", type=float, default=0.8,
                         help="Large-margin value for DQfD classification loss")
+    parser.add_argument("--batch_size", type=int, default=256,
+                        help="Batch size for DQfD training")
+
     parser.add_argument("--save_model", action="store_true",
                         help="Save model checkpoint after training")
     parser.add_argument("--load_model", type=str, default=None,

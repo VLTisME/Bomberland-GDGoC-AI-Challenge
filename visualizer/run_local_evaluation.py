@@ -345,7 +345,7 @@ def run_simple_viewer(model_paths, num_episodes=10, max_steps=100, seed=None, au
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--model_paths", nargs="+", default=["None", "None", "None", "None"])
+	parser.add_argument("--model_paths", nargs="+", default=["None", "None"])
 	parser.add_argument("--num_episodes", type=int, default=10)
 	parser.add_argument("--max_steps", type=int, default=500)
 	parser.add_argument("--seed", type=int, default=None)
