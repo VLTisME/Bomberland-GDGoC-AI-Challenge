@@ -3,3 +3,4 @@ pygame
 torch
 tqdm
 matplotlib
+trueskill
