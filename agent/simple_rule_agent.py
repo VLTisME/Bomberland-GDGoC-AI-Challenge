@@ -10,6 +10,7 @@ class SimpleRuleAgent:
         3: (0, -1),
         4: (0, 1),
     }
+    team_id = "SimpleRuleAgent"
 
     def __init__(self, agent_id):
         self.agent_id = int(agent_id)

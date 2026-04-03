@@ -9,7 +9,7 @@ class BoxFarmerAgent:
     - collect items,
     - place bombs to break nearby boxes only with an escape path.
     """
-
+    team_id = "BoxFarmer"
     MOVES = {
         0: (0, 0),
         1: (-1, 0),

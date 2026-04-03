@@ -120,6 +120,8 @@ class DQNAgent:
     Returns:
         None
     """
+    team_id = "DQNAgent"
+    
     def __init__(self, agent_id: int, input_spec, num_actions: int, lr: float=1e-3, device: str="cpu", pretrained_model=None):
         self.agent_id = agent_id
         self.num_actions = num_actions

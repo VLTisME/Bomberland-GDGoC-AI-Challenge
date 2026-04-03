@@ -17,7 +17,7 @@ class TacticalRuleAgent:
         3: (0, -1),
         4: (0, 1),
     }
-
+    team_id = "TacticalRuleAgent"
     def __init__(self, agent_id: int):
         self.agent_id = int(agent_id)
 

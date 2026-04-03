@@ -1,6 +1,7 @@
 # simulates agents that violate the rules
 
 class TimeOutAgent:
+    team_id = "TimeOutAgent"
     def __init__(self):
         pass
     
@@ -9,6 +10,7 @@ class TimeOutAgent:
             pass
         
 class InvalidActionAgent:
+    team_id = "InvalidActionAgent"
     def __init__(self):
         pass
     
@@ -16,6 +18,7 @@ class InvalidActionAgent:
         return 6
 
 class NoBombAgent:
+    team_id = "NoBombAgent"
     def __init__(self):
         pass
     

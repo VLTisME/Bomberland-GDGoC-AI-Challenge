@@ -506,6 +506,8 @@ def pretrain_bc(q_net, bc_data, device, bc_epochs=15, batch_size=128,
 
 class DQfDAgent:
     """DQN agent with an additional large-margin classification loss for DQfD."""
+    
+    team_id = "DQfDAgent"
 
     def __init__(self, agent_id, input_spec, num_actions, lr=1e-3,
                  device="cpu", margin=0.8, pretrained_model=None):
