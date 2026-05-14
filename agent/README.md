@@ -29,6 +29,29 @@ class Agent:
 *   **Resources**: CPU-only evaluation. No GPU access.
 *   **Isolation**: No network access or file writing during the match.
 
+## Local Training (Kaggle)
+
+Follow the provided steps to train DQN on Kaggle Platform: 
+1. Get github access token from github.com > Settings > Developer settings > Personal Access Tokens > Generate new token > Choose scope for the key (allow read repo) > Copy the key
+2. Create a new notebook on kaggle and add to Settings > Secrets > Key: any name for the key such as "dqn", Value: Paste the key here
+3. Paste the following code in 4 cells:
+```
+# Cell 1: Get token based on the key in Step 2
+from kaggle_secrets import UserSecretsClient
+user_secrets = UserSecretsClient()
+secret_value_0 = user_secrets.get_secret("dqn") 
+
+# Cell 2: Change the "your github username here"
+!git clone https://{your github username here}:{secret_value_0}@github.com/VLTisME/Bomberland-GDGoC-AI-Challenge.git
+
+# Cell 3: Inspect to see any error
+%cd /kaggle/working/Bomberland-GDGoC-AI-Challenge
+%ls
+
+# Cell 4: Train 10000 episodes versus a tactical baseline agent
+!python /kaggle/working/Bomberland-GDGoC-AI-Challenge/agent/dqn_agent/agent.py --enemy_type tactical --num_episodes 10000 --save_model
+```
+
 ## 🧪 Local Testing
 
 Guidance for local testing before submitting your agent. All participant scripts are located in the `scripts/participant/` folder.
